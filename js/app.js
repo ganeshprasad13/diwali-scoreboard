@@ -1,4 +1,4 @@
-import { GAMES, BONUS, other, gameResult, scores, fmt, fresh } from './scoring.js';
+import { GAMES, BONUS, other, gameResult, scores, fmt, fresh, buildPub } from './scoring.js';
 import * as store from './store.js';
 
 const $ = s => document.querySelector(s), S = store.state, U = store.update;
@@ -13,21 +13,35 @@ const NAV = [['dash', 'Dashboard'], ['games', 'Games'], ['members', 'Members'], 
 let gsel = 'g1';
 
 /* ---------- views ---------- */
-const hero = big => { const sc = scores(S()); return `<section class="hero ${big ? 'big' : ''}">${['red', 'blue'].map(t => `<div class="team ${t}"><h2>${esc(tn(t))}</h2><div class="num">${fmt(sc[t].total)}</div><small>Main ${fmt(sc[t].main)} · Bonus ${fmt(sc[t].bonus)} · Adj ${fmt(sc[t].adj)}</small></div>`).join('')}</section>`; };
-const bar = () => { const sc = scores(S()), a = sc.red.total, b = sc.blue.total; return `<div class="bar"><i style="width:${a + b > 0 ? a / (a + b) * 100 : 50}%"></i></div>`; };
-const loginView = () => `<form class="card login"><h2>🪔 Admin sign in</h2><input id="em" type="email" placeholder="Email" required autocomplete="username"><input id="pw" type="password" placeholder="Password" required autocomplete="current-password"><button>Sign in</button><p id="le" class="red"></p></form>`;
+const vm = () => store.getRole() === 'member' ? store.getPub() : buildPub(S());
+const av = (m, big) => `<span class="av ${m.team} ${big ? 'big' : ''}">${esc((m.name || '?')[0].toUpperCase())}</span>`;
+const hero = (v, big) => `<section class="hero ${big ? 'big' : ''}">${['red', 'blue'].map(t => `<div class="team ${t}"><h2>${esc(v.teams[t])}</h2><div class="num">${fmt(v.scores[t].total)}</div><small>Main ${fmt(v.scores[t].main)} · Bonus ${fmt(v.scores[t].bonus)} · Adj ${fmt(v.scores[t].adj)}</small></div>`).join('')}</section>`;
+const bar = v => { const a = v.scores.red.total, b = v.scores.blue.total; return `<div class="bar"><i style="width:${a + b > 0 ? a / (a + b) * 100 : 50}%"></i></div>`; };
+const loginView = () => `<form class="card login"><div class="logo">🪔</div><h2>Diwali Party Scoreboard</h2><p class="mut">Sign in to follow the game live</p><input id="em" type="text" placeholder="Username (admin: email)" required autocapitalize="none" autocomplete="username"><input id="pw" type="password" placeholder="Password" required autocomplete="current-password"><button class="primary">Sign in</button><p id="le" class="red"></p></form>`;
 
-function dash() {
-  const s = S(), sc = scores(s);
-  const rows = GAMES.map(g => {
-    const r = gameResult(g, s), b = s.games[g.id].bonus;
-    return `<tr><td>${g.id.toUpperCase()} ${esc(g.name)}</td><td>${g.points}</td><td>${fmt(r.tally.red)} – ${fmt(r.tally.blue)}</td><td>${r.winner ? `<b class="${r.winner}">${esc(tn(r.winner))}</b>` : r.tie ? 'Tie – set winner' : `${r.done}/${g.rounds} rounds`}</td><td>${r.winner ? (b.awarded === true ? `+${BONUS} ${esc(tn(other(r.winner)))}` : b.awarded === false ? 'not won' : 'pending') : '—'}</td></tr>`;
-  }).join('');
-  const champ = sc.decided < 5 ? '' : `<div class="card"><h2>${sc.red.total === sc.blue.total ? '🤝 Scores level – decide a tie-break' : `🏆 Ultimate Team Champion: ${esc(tn(sc.red.total > sc.blue.total ? 'red' : 'blue'))}!`}</h2></div>`;
-  return `${store.isCloud() ? '' : '<div class="card">⚠️ <b>Local mode</b> — data lives only in this browser. Configure Firebase (README) for cloud saving.</div>'}${hero()}${bar()}${champ}
-  <div class="card"><h3>Game summary</h3><div class="scroll"><table><tr><th>Game</th><th>Pts</th><th>Rounds (R – B)</th><th>Winner</th><th>Bonus</th></tr>${rows}</table></div></div>
-  <a class="btn" href="#/display">📺 Open big-screen display</a>`;
+function board(v) {
+  const sc = v.scores, t = v.teams, me = store.me(), member = store.getRole() === 'member';
+  const mine = member ? v.members.find(m => m.name.split(' ')[0].toLowerCase() === me) : null;
+  const diff = sc.red.total - sc.blue.total, lead = diff > 0 ? 'red' : 'blue';
+  const banner = sc.decided >= 5 ? (diff === 0 ? '🤝 Scores level — tie-break time!' : `🏆 ${esc(t[lead])} are the Ultimate Team Champions!`) : (diff === 0 ? '⚖️ Neck and neck!' : `🔥 ${esc(t[lead])} lead by ${fmt(Math.abs(diff))}`);
+  const byPts = k => v.members.filter(m => m.team === k).sort((a, b) => b.pts - a.pts);
+  const myCard = !member ? '' : mine
+    ? `<div class="card me ${mine.team}">${av(mine, 1)}<div class="grow"><h3>${esc(mine.name)}</h3><small>${esc(t[mine.team])} · #${byPts(mine.team).findIndex(m => m.id === mine.id) + 1} in team</small></div><div class="kpi"><b>${fmt(mine.pts)}</b><small>points</small></div><div class="kpi"><b>${mine.won}/${mine.played}</b><small>rounds won</small></div></div>`
+    : `<div class="card">👋 Welcome <b>${esc(me)}</b>! The host will add you to a team soon.</div>`;
+  const top = [...v.members].filter(m => m.played).sort((a, b) => b.pts - a.pts || b.won - a.won).slice(0, 5), mx = Math.max(1, ...top.map(m => m.pts));
+  const tot = { red: 0, blue: 0 };
+  Object.values(store.getCheers()).forEach(c => { if (c.team in tot) tot[c.team] += c.n || 0; });
+  const games = v.games.map(g => `<div class="gcard ${g.winner ? 'done' : g.done ? 'live' : 'next'}"><div class="gh"><b>${g.id.toUpperCase()}</b><span class="grow">${esc(g.name)}</span><em>${g.points} pts</em></div><div class="gs">${fmt(g.tally.red)} – ${fmt(g.tally.blue)}</div><small>${g.winner ? `✅ ${esc(t[g.winner])} won${g.bonus ? ` · bonus ${g.bonus}` : ''}` : g.done ? `🔴 Live · ${g.done}/${g.rounds} rounds` : '⏳ Upcoming'}</small></div>`).join('');
+  return `<div class="banner">${banner}</div>${hero(v)}${bar(v)}${myCard}
+  ${v.finale.winner ? `<div class="card win">🏆 Grand Finale winner: <b>${esc(v.finale.winner)}</b></div>` : ''}
+  <div class="games">${games}</div>
+  <div class="grid2"><div class="card"><h3>⭐ Top performers</h3>${top.map((m, i) => `<div class="lb">${av(m)}<div class="grow"><b>${i === 0 ? '👑 ' : ''}${esc(m.name)}</b> <small class="mut">${esc(t[m.team])}</small><div class="meter"><i class="${m.team}" style="width:${m.pts / mx * 100}%"></i></div></div><b>${fmt(m.pts)}</b></div>`).join('') || '<p class="mut">Appears once rounds start.</p>'}</div>
+  <div class="card"><h3>📣 Crowd cheer</h3><div class="row"><b class="red">${esc(t.red)} ${tot.red}</b><span class="grow"></span><b class="blue">${tot.blue} ${esc(t.blue)}</b></div><div class="bar"><i style="width:${tot.red + tot.blue ? tot.red / (tot.red + tot.blue) * 100 : 50}%"></i></div>${mine ? `<button class="cheer ${mine.team}" data-act="cheer" data-t="${mine.team}">📣 Cheer ${esc(t[mine.team])}!</button>` : '<p class="mut">Members tap to cheer for their team.</p>'}</div></div>
+  <div class="grid2">${['red', 'blue'].map(k => `<div class="card"><h3 class="${k}">${esc(t[k])}</h3>${byPts(k).map(m => `<div class="li">${av(m)}${esc(m.name)}${mine && m.id === mine.id ? ' <small class="mut">(you)</small>' : ''}<b style="margin-left:auto">${fmt(m.pts)} pts</b></div>`).join('') || '—'}</div>`).join('')}</div>
+  <div class="card"><h3>⚡ Live feed</h3>${v.feed.map(l => `<div class="li"><small class="mut">${time(l.t)}</small> ${esc(l.m)}</div>`).join('') || '<p class="mut">Nothing yet.</p>'}</div>`;
 }
+const dash = () => `${store.isCloud() ? '' : '<div class="card">⚠️ <b>Local mode</b> — data lives only in this browser. Configure Firebase (README) for cloud saving.</div>'}${board(vm())}<a class="btn" href="#/display">📺 Open big-screen display</a>`;
+const memberView = () => { const v = store.getPub(); return v ? board(v) : '<div class="card">⏳ Waiting for the host to start the scoreboard…</div>'; };
 
 function games() {
   const s = S(), G = GAMES.find(g => g.id === gsel), gm = s.games[gsel], r = gameResult(G, s);
@@ -74,25 +88,34 @@ function ledger() {
   <div class="card"><h3>🧾 Activity log (latest 300)</h3>${s.log.map(l => `<div class="li"><small class="mut">${time(l.t)}</small> ${esc(l.m)}</div>`).join('') || '—'}</div>`;
 }
 
+const MEMBERS = ['riya', 'yash', 'upkaar', 'vikram', 'seema', 'kalpana', 'pummy', 'ganesh', 'diljeet', 'sanchita', 'sneha', 'shrutie', 'umesh', 'saurav'];
 function settings() {
   return `<div class="card"><h3>Team names</h3><div class="row"><input data-ch="tname" data-t="red" value="${esc(tn('red'))}"><input data-ch="tname" data-t="blue" value="${esc(tn('blue'))}"></div></div>
+  ${store.isCloud() ? `<div class="card"><h3>👥 Member logins</h3><p class="mut">Username = password = first name (lowercase). Members see a read-only dashboard. Add members in the Members tab using the SAME first name so their card links up.</p><textarea id="mlist" rows="5">${MEMBERS.join('\n')}</textarea><div class="row" style="margin-top:.5rem"><button data-act="mlogins">Create member logins</button></div><pre id="mout" class="mut"></pre></div>` : ''}
   <div class="card"><h3>Backup & tools</h3><div class="row"><button data-act="exj">⬇ Export JSON backup</button><button data-act="exc">⬇ Export CSV</button><label class="btn">⬆ Import JSON<input type="file" id="imp" accept=".json" hidden></label><a class="btn" href="#/display">📺 Display mode</a><button onclick="print()">🖨 Print</button></div></div>
   <div class="card"><h3>Danger zone</h3><div class="row"><button class="danger" data-act="reset">Reset everything</button>${store.isCloud() ? '<button data-act="logout">Sign out</button>' : ''}</div></div>`;
 }
 
 /* ---------- render ---------- */
 function render() {
-  if (!S() && !store.needsLogin()) return;
   if (store.needsLogin()) { $('#top').innerHTML = ''; $('#app').innerHTML = loginView(); return; }
-  const r = location.hash.slice(2) || 'dash';
-  if (r === 'display') { $('#top').innerHTML = ''; $('#app').innerHTML = `<div class="display">${hero(true)}${bar()}<a class="x" href="#/dash">✕</a></div>`; return; }
-  $('#top').innerHTML = `<b>🪔 Scoreboard</b><nav>${NAV.map(([k, l]) => `<a href="#/${k}" class="${k === r ? 'on' : ''}">${l}</a>`).join('')}</nav><span class="pill ${store.status()}">${store.statusLabel()}</span>`;
+  const member = store.getRole() === 'member';
+  if (!member && !S()) return;
+  const r = location.hash.slice(2) || 'dash', pill = `<span class="pill ${store.status()}">${store.statusLabel()}</span>`;
+  if (r === 'display') { const v = vm(); $('#top').innerHTML = ''; $('#app').innerHTML = v ? `<div class="display">${hero(v, 1)}${bar(v)}<a class="x" href="#/dash">✕</a></div>` : ''; return; }
+  if (member) { $('#top').innerHTML = `<b>🪔 Diwali Party</b><span class="grow"></span>${pill}<button class="x" data-act="logout">Sign out</button>`; $('#app').innerHTML = memberView(); return; }
+  $('#top').innerHTML = `<b>🪔 Scoreboard</b><nav>${NAV.map(([k, l]) => `<a href="#/${k}" class="${k === r ? 'on' : ''}">${l}</a>`).join('')}</nav>${pill}`;
   $('#app').innerHTML = ({ dash, games, members, finale, ledger, settings }[r] || dash)();
 }
 
 /* ---------- actions ---------- */
 const dl = (name, text, type) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); };
-function act(d) {
+function burst(el) {
+  const r = el.getBoundingClientRect();
+  for (let i = 0; i < 8; i++) { const f = document.createElement('span'); f.className = 'fly'; f.textContent = ['🎉', '🪔', '✨', '🔥', '👏'][i % 5]; f.style.left = r.left + r.width / 2 + Math.random() * 120 - 60 + 'px'; f.style.top = r.top + 'px'; document.body.appendChild(f); setTimeout(() => f.remove(), 1200); }
+}
+function act(d, el) {
+  if (store.getRole() === 'member') { if (d.act === 'cheer') { store.cheer(d.t); burst(el); } else if (d.act === 'logout') store.logout(); return; }
   const s = S(), G = GAMES.find(g => g.id === gsel), gm = s.games[gsel], gl = G.id.toUpperCase();
   switch (d.act) {
     case 'sel': gsel = d.g; render(); break;
@@ -117,6 +140,7 @@ function act(d) {
       dl('scoreboard.csv', rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n'), 'text/csv'); break;
     }
     case 'reset': if (prompt('Type RESET to erase ALL data') === 'RESET') store.replace(fresh(), 'Event reset'); break;
+    case 'mlogins': $('#mout').textContent = 'Creating…'; store.createLogins($('#mlist').value.split(/[\n,]/)).then(o => { $('#mout').textContent = o.join('\n'); }).catch(e => { $('#mout').textContent = 'Failed: ' + e.message; }); break;
     case 'logout': store.logout(); break;
   }
 }
@@ -133,7 +157,7 @@ function ch(d, v) {
 }
 
 /* ---------- wiring ---------- */
-document.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b) act(b.dataset); });
+document.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b) act(b.dataset, b); });
 document.addEventListener('change', async e => {
   const el = e.target;
   if (el.id === 'imp') {

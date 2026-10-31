@@ -46,3 +46,35 @@ export function scores(s) {
   for (const k of ['red', 'blue']) t[k].total = t[k].main + t[k].bonus + t[k].adj;
   return t;
 }
+
+// Points each member earned for their team (rounds where they were the player and their team won).
+export function contributions(s) {
+  const c = {};
+  s.members.forEach(m => { c[m.id] = { played: 0, won: 0, pts: 0 }; });
+  GAMES.forEach(g => s.games[g.id].rounds.forEach(r => {
+    [['red', 'pr'], ['blue', 'pb']].forEach(([t, k]) => {
+      const id = r[k]; if (!id || !c[id]) return;
+      c[id].played++;
+      if (r.w === t) { c[id].won++; c[id].pts += g.rp; }
+    });
+  }));
+  return c;
+}
+
+// Read-only snapshot shown to members (written to Firestore doc public/scoreboard).
+export function buildPub(s) {
+  const con = contributions(s), nm = id => s.members.find(m => m.id === id)?.name || '';
+  return {
+    updated: Date.now(),
+    teams: { red: s.teams.red.name, blue: s.teams.blue.name },
+    scores: scores(s),
+    games: GAMES.map(g => {
+      const r = gameResult(g, s), gm = s.games[g.id];
+      return { id: g.id, name: g.name, points: g.points, rounds: g.rounds, done: r.done, tally: r.tally, winner: r.winner || '',
+        bonus: r.winner ? (gm.bonus.awarded === true ? 'awarded' : gm.bonus.awarded === false ? 'missed' : 'pending') : '' };
+    }),
+    members: s.members.filter(m => m.team).map(m => ({ id: m.id, name: m.name, team: m.team, ...con[m.id] })),
+    finale: { winner: nm(s.finale.winner), out: s.finale.eliminated.map(nm).filter(Boolean) },
+    feed: s.log.slice(0, 15)
+  };
+}
