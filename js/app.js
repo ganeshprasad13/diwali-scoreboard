@@ -82,6 +82,7 @@ function settings() {
 
 /* ---------- render ---------- */
 function render() {
+  if (!S() && !store.needsLogin()) return;
   if (store.needsLogin()) { $('#top').innerHTML = ''; $('#app').innerHTML = loginView(); return; }
   const r = location.hash.slice(2) || 'dash';
   if (r === 'display') { $('#top').innerHTML = ''; $('#app').innerHTML = `<div class="display">${hero(true)}${bar()}<a class="x" href="#/dash">✕</a></div>`; return; }
@@ -149,4 +150,7 @@ document.addEventListener('submit', async e => {
 store.onChange(render);
 store.onStatus(() => { const p = $('.pill'); if (p) { p.className = 'pill ' + store.status(); p.textContent = store.statusLabel(); } });
 addEventListener('hashchange', render);
-store.init().then(render);
+render();
+store.init().then(render).catch(err => {
+  $('#app').innerHTML = `<div class="card"><h3 class="red">Startup error</h3><p>${esc(err.message || err)}</p><p class="mut">Check js/config.js and your internet connection, then hard-refresh.</p></div>`;
+});
