@@ -1,7 +1,6 @@
 // Paste your Firebase web-app config here (see README, Part A).
 // Leave apiKey empty to run in LOCAL MODE (data stays in this browser only).
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyB0SP-sRd5_YS47_l7bb0X6hhe63da12mc",
   authDomain: "diwali-party-scoreboard.firebaseapp.com",
   projectId: "diwali-party-scoreboard",
